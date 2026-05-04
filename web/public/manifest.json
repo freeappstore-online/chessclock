@@ -1,0 +1,9 @@
+{
+  "name": "Chess Clock",
+  "short_name": "Chess Clock",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1917",
+  "theme_color": "#1a1917",
+  "description": "Beautiful chess clock for over-the-board play. Tap to switch, pick your time control."
+}
