@@ -5,5 +5,7 @@
   "display": "standalone",
   "background_color": "#1a1917",
   "theme_color": "#1a1917",
-  "description": "Beautiful chess clock for over-the-board play. Tap to switch, pick your time control."
+  "description": "Beautiful chess clock for over-the-board play. Tap to switch, pick your time control.",
+  "orientation": "any",
+  "min_viewport_width": 360
 }
