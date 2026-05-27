@@ -176,8 +176,35 @@ function Clock({
   const [activePlayer, setActivePlayer] = useState<Player | null>(null);
   const [state, setState] = useState<GameState>("idle");
   const [moves, setMoves] = useState<[number, number]>([0, 0]);
+  const [layout, setLayout] = useState<"portrait" | "landscape">("portrait");
+  const manualLayoutRef = useRef(false);
   const intervalRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
+
+  useEffect(() => {
+    const handler = (e: DeviceOrientationEvent) => {
+      if (manualLayoutRef.current) return;
+      const beta = e.beta;
+      if (beta === null) return;
+      const absBeta = Math.abs(beta);
+      setLayout((prev) => {
+        if (prev === "portrait" && absBeta > 55) return "landscape";
+        if (prev === "landscape" && absBeta < 35) return "portrait";
+        return prev;
+      });
+    };
+    window.addEventListener("deviceorientation", handler);
+    return () => window.removeEventListener("deviceorientation", handler);
+  }, []);
+
+  const toggleLayout = useCallback(async () => {
+    const DOE = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
+    if (typeof DOE.requestPermission === "function") {
+      try { await DOE.requestPermission(); } catch {}
+    }
+    manualLayoutRef.current = true;
+    setLayout((prev) => (prev === "portrait" ? "landscape" : "portrait"));
+  }, []);
 
   const stopInterval = useCallback(() => {
     if (intervalRef.current !== null) {
@@ -217,7 +244,6 @@ function Clock({
   const handleTap = (player: Player) => {
     if (state === "ended") return;
 
-    // First tap starts the clock — black's side (player 1) taps to start white's clock
     if (state === "idle") {
       setActivePlayer(0);
       setState("running");
@@ -225,13 +251,10 @@ function Clock({
     }
 
     if (state === "paused") return;
-
-    // Only the active player can tap (to end their turn)
     if (activePlayer !== player) return;
 
     stopInterval();
 
-    // Add increment
     setTimes((prev) => {
       const next: [number, number] = [...prev];
       next[player] = next[player]! + incrementMs;
@@ -244,7 +267,6 @@ function Clock({
       return next;
     });
 
-    // Switch to other player
     const other: Player = player === 0 ? 1 : 0;
     setActivePlayer(other);
   };
@@ -268,34 +290,48 @@ function Clock({
 
   const isLow = (ms: number) => ms < 30000 && ms > 0;
   const winner = state === "ended" ? (times[0]! <= 0 ? 1 : 0) : null;
+  const isLandscape = layout === "landscape";
+
+  const playerBg = (player: Player) => {
+    if (state === "ended" && winner === player) return "var(--color-accent)";
+    if (activePlayer === player) return "var(--color-active)";
+    return "var(--color-panel)";
+  };
+
+  const playerColor = (player: Player) => {
+    if (state === "ended" && winner === player) return "#fff";
+    return "var(--color-ink)";
+  };
+
+  const activeShadow = (player: Player) => {
+    if (activePlayer !== player || state === "ended") return "none";
+    return isLandscape
+      ? "inset 4px 0 0 0 var(--color-accent)"
+      : "inset 0 4px 0 0 var(--color-accent)";
+  };
+
+  const timerFontSize = isLandscape
+    ? "clamp(2.5rem, 10vh, 5rem)"
+    : "clamp(3rem, 12vw, 6rem)";
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Player 2 (top, rotated 180) */}
+    <div className={`h-full flex ${isLandscape ? "flex-row" : "flex-col"}`}>
+      {/* Player 2 */}
       <button
         onClick={() => handleTap(1)}
-        className="flex-1 flex flex-col items-center justify-center transition-colors duration-100 relative"
+        className="flex-1 flex flex-col items-center justify-center transition-colors duration-200 relative"
         style={{
           transform: "rotate(180deg)",
-          background:
-            state === "ended" && winner === 1
-              ? "var(--color-accent)"
-              : activePlayer === 1
-                ? "var(--color-ink)"
-                : "var(--color-panel)",
-          color:
-            state === "ended" && winner === 1
-              ? "#fff"
-              : activePlayer === 1
-                ? "var(--color-paper)"
-                : "var(--color-ink)",
+          background: playerBg(1),
+          color: playerColor(1),
+          boxShadow: activeShadow(1),
         }}
       >
         <span
           className="font-bold tracking-tight"
           style={{
             fontFamily: "var(--font-display)",
-            fontSize: "clamp(3rem, 12vw, 6rem)",
+            fontSize: timerFontSize,
             color: isLow(times[1]!) && activePlayer === 1 ? "#ef4444" : "inherit",
           }}
         >
@@ -313,7 +349,7 @@ function Clock({
 
       {/* Center controls */}
       <div
-        className="flex items-center justify-center gap-4 py-3 px-4 z-10"
+        className={`flex items-center justify-center gap-3 z-10 ${isLandscape ? "flex-col py-4 px-2" : "py-3 px-4"}`}
         style={{ background: "var(--color-paper)" }}
       >
         <button
@@ -360,28 +396,38 @@ function Clock({
           </button>
         )}
 
+        <button
+          onClick={toggleLayout}
+          className="w-10 h-10 flex items-center justify-center rounded-full transition-colors"
+          style={{ background: "var(--color-panel)", color: "var(--color-muted)" }}
+          title={isLandscape ? "Switch to portrait" : "Switch to landscape"}
+        >
+          {isLandscape ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <line x1="12" y1="4" x2="12" y2="20" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="4" y="2" width="16" height="20" rx="2" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+            </svg>
+          )}
+        </button>
+
         <div className="text-xs font-medium" style={{ color: "var(--color-muted)" }}>
           {timeControl.label}
         </div>
       </div>
 
-      {/* Player 1 (bottom) */}
+      {/* Player 1 */}
       <button
         onClick={() => handleTap(0)}
-        className="flex-1 flex flex-col items-center justify-center transition-colors duration-100 relative"
+        className="flex-1 flex flex-col items-center justify-center transition-colors duration-200 relative"
         style={{
-          background:
-            state === "ended" && winner === 0
-              ? "var(--color-accent)"
-              : activePlayer === 0
-                ? "var(--color-ink)"
-                : "var(--color-panel)",
-          color:
-            state === "ended" && winner === 0
-              ? "#fff"
-              : activePlayer === 0
-                ? "var(--color-paper)"
-                : "var(--color-ink)",
+          background: playerBg(0),
+          color: playerColor(0),
+          boxShadow: activeShadow(0),
         }}
       >
         {state === "ended" && winner === 0 && (
@@ -391,7 +437,7 @@ function Clock({
           className="font-bold tracking-tight"
           style={{
             fontFamily: "var(--font-display)",
-            fontSize: "clamp(3rem, 12vw, 6rem)",
+            fontSize: timerFontSize,
             color: isLow(times[0]!) && activePlayer === 0 ? "#ef4444" : "inherit",
           }}
         >
