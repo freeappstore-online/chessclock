@@ -28,6 +28,12 @@ type Player = 0 | 1;
 type GameState = "idle" | "running" | "paused" | "ended";
 type TimerMode = "fischer" | "bronstein" | "delay";
 
+function countryFlag(code: string): string {
+  return [...code.toUpperCase()].map(c =>
+    String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)
+  ).join("");
+}
+
 function formatTime(ms: number): string {
   if (ms <= 0) return "0:00";
   const totalSeconds = Math.ceil(ms / 1000);
@@ -117,6 +123,24 @@ export function App() {
     });
   };
 
+  const [boardCount, setBoardCount] = useState(() => {
+    try { const s = localStorage.getItem("chessclock-boards"); if (s) { const n = Number(s); if (n >= 1 && n <= 8) return n; } } catch {}
+    return 1;
+  });
+
+  const selectBoardCount = (n: number) => {
+    setBoardCount(n);
+    try { localStorage.setItem("chessclock-boards", String(n)); } catch {}
+  };
+
+  const [flag, setFlag] = useState("");
+  useEffect(() => {
+    fetch("/cdn-cgi/trace").then(r => r.text()).then(text => {
+      const match = text.match(/loc=([A-Z]{2})/);
+      if (match?.[1]) setFlag(countryFlag(match[1]));
+    }).catch(() => {});
+  }, []);
+
   if (screen === "setup") {
     return (
       <Setup
@@ -128,7 +152,22 @@ export function App() {
         onModeChange={selectMode}
         whitePlayer={whitePlayer}
         onSwapColors={swapColors}
+        boardCount={boardCount}
+        onBoardCountChange={selectBoardCount}
         onStart={() => setScreen("clock")}
+      />
+    );
+  }
+
+  if (boardCount > 1) {
+    return (
+      <MultiBoard
+        timeControl={timeControl}
+        mode={mode}
+        whitePlayer={whitePlayer}
+        flag={flag}
+        boardCount={boardCount}
+        onBack={() => setScreen("setup")}
       />
     );
   }
@@ -139,6 +178,7 @@ export function App() {
       names={names}
       mode={mode}
       whitePlayer={whitePlayer}
+      flag={flag}
       onBack={() => setScreen("setup")}
     />
   );
@@ -155,6 +195,8 @@ function Setup({
   onModeChange,
   whitePlayer,
   onSwapColors,
+  boardCount,
+  onBoardCountChange,
   onStart,
 }: {
   selected: TimeControl;
@@ -165,6 +207,8 @@ function Setup({
   onModeChange: (mode: TimerMode) => void;
   whitePlayer: Player;
   onSwapColors: () => void;
+  boardCount: number;
+  onBoardCountChange: (n: number) => void;
   onStart: () => void;
 }) {
   const tags = [...new Set(TIME_CONTROLS.map((tc) => tc.tag))];
@@ -297,6 +341,29 @@ function Setup({
           </div>
         </div>
 
+        <div className="mb-8">
+          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--color-muted)" }}>
+            Boards
+          </p>
+          <div className="flex gap-2">
+            {[1, 2, 3, 4, 6, 8].map(n => (
+              <button
+                key={n}
+                onClick={() => onBoardCountChange(n)}
+                className="w-11 h-10 text-sm font-semibold transition-all duration-100"
+                style={{
+                  borderRadius: "var(--radius-btn)",
+                  background: boardCount === n ? "var(--color-accent)" : "var(--color-panel)",
+                  color: boardCount === n ? "#fff" : "var(--color-ink)",
+                  border: `1.5px solid ${boardCount === n ? "var(--color-accent)" : "var(--color-line)"}`,
+                }}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button
           onClick={onStart}
           className="w-full py-4 text-lg font-bold text-white transition-all duration-100 active:scale-[0.98]"
@@ -326,23 +393,19 @@ function Setup({
 
 // ── Clock Screen ──
 
-function countryFlag(code: string): string {
-  return [...code.toUpperCase()].map(c =>
-    String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)
-  ).join("");
-}
-
 function Clock({
   timeControl,
   names,
   mode,
   whitePlayer,
+  flag,
   onBack,
 }: {
   timeControl: TimeControl;
   names: [string, string];
   mode: TimerMode;
   whitePlayer: Player;
+  flag: string;
   onBack: () => void;
 }) {
   const initialMs = timeControl.minutes * 60 * 1000;
@@ -359,18 +422,10 @@ function Clock({
   });
   const soundRef = useRef(soundEnabled);
   soundRef.current = soundEnabled;
-  const [flag, setFlag] = useState("");
   const delayLeftRef = useRef(0);
   const turnStartRef = useRef(0);
   const intervalRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
-
-  useEffect(() => {
-    fetch("/cdn-cgi/trace").then(r => r.text()).then(text => {
-      const match = text.match(/loc=([A-Z]{2})/);
-      if (match?.[1]) setFlag(countryFlag(match[1]));
-    }).catch(() => {});
-  }, []);
 
   useEffect(() => {
     const handler = (e: DeviceOrientationEvent) => {
@@ -827,6 +882,257 @@ function Clock({
           <p className="text-lg font-semibold text-white px-6 py-3 rounded-xl" style={{ background: "rgba(0,0,0,0.6)" }}>
             Tap to start
           </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Multi-Board ──
+
+function MultiBoard({
+  timeControl,
+  mode,
+  whitePlayer,
+  flag,
+  boardCount,
+  onBack,
+}: {
+  timeControl: TimeControl;
+  mode: TimerMode;
+  whitePlayer: Player;
+  flag: string;
+  boardCount: number;
+  onBack: () => void;
+}) {
+  return (
+    <div className="h-full overflow-y-auto" style={{ background: "var(--color-paper)" }}>
+      <div className="flex items-center justify-between px-4 py-3 sticky top-0 z-20" style={{ background: "var(--color-paper)", borderBottom: "1px solid var(--color-line)" }}>
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm font-medium"
+          style={{ color: "var(--color-accent)" }}
+        >
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+          </svg>
+          Setup
+        </button>
+        <span className="text-sm font-semibold" style={{ color: "var(--color-muted)" }}>
+          {boardCount} board{boardCount !== 1 ? "s" : ""} &middot; {timeControl.label}
+        </span>
+      </div>
+      <div
+        className="grid gap-3 p-3"
+        style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}
+      >
+        {Array.from({ length: boardCount }, (_, i) => (
+          <BoardCard
+            key={i}
+            timeControl={timeControl}
+            mode={mode}
+            whitePlayer={whitePlayer}
+            flag={flag}
+            boardNum={i + 1}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BoardCard({
+  timeControl,
+  mode,
+  whitePlayer,
+  flag,
+  boardNum,
+}: {
+  timeControl: TimeControl;
+  mode: TimerMode;
+  whitePlayer: Player;
+  flag: string;
+  boardNum: number;
+}) {
+  const initialMs = timeControl.minutes * 60 * 1000;
+  const incrementMs = timeControl.increment * 1000;
+
+  const [times, setTimes] = useState<[number, number]>([initialMs, initialMs]);
+  const [activePlayer, setActivePlayer] = useState<Player | null>(null);
+  const [state, setState] = useState<GameState>("idle");
+  const [moves, setMoves] = useState<[number, number]>([0, 0]);
+  const delayLeftRef = useRef(0);
+  const turnStartRef = useRef(0);
+  const intervalRef = useRef<number | null>(null);
+  const lastTickRef = useRef<number>(0);
+
+  const stopInterval = useCallback(() => {
+    if (intervalRef.current !== null) {
+      cancelAnimationFrame(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  const tick = useCallback(() => {
+    const now = performance.now();
+    const delta = now - lastTickRef.current;
+    lastTickRef.current = now;
+
+    if (mode === "delay" && delayLeftRef.current > 0) {
+      delayLeftRef.current -= delta;
+      if (delayLeftRef.current > 0) { intervalRef.current = requestAnimationFrame(tick); return; }
+      const excess = -delayLeftRef.current;
+      delayLeftRef.current = 0;
+      let ended = false;
+      setTimes(prev => {
+        const next: [number, number] = [...prev];
+        if (activePlayer !== null) {
+          next[activePlayer] = Math.max(0, next[activePlayer]! - excess);
+          if (next[activePlayer]! <= 0) { ended = true; setState("ended"); }
+        }
+        return next;
+      });
+      if (!ended) intervalRef.current = requestAnimationFrame(tick);
+      return;
+    }
+
+    let ended = false;
+    setTimes(prev => {
+      const next: [number, number] = [...prev];
+      if (activePlayer !== null) {
+        next[activePlayer] = Math.max(0, next[activePlayer]! - delta);
+        if (next[activePlayer]! <= 0) { ended = true; setState("ended"); }
+      }
+      return next;
+    });
+    if (!ended) intervalRef.current = requestAnimationFrame(tick);
+  }, [activePlayer, mode]);
+
+  useEffect(() => {
+    if (state === "running" && activePlayer !== null) {
+      lastTickRef.current = performance.now();
+      intervalRef.current = requestAnimationFrame(tick);
+    }
+    return stopInterval;
+  }, [state, activePlayer, tick, stopInterval]);
+
+  const handleTap = (player: Player) => {
+    if (state === "ended") return;
+    if (state === "idle") {
+      delayLeftRef.current = incrementMs;
+      turnStartRef.current = initialMs;
+      setActivePlayer(whitePlayer);
+      setState("running");
+      return;
+    }
+    if (state === "paused" || activePlayer !== player) return;
+    stopInterval();
+    setTimes(prev => {
+      const next: [number, number] = [...prev];
+      if (mode === "fischer") next[player] = next[player]! + incrementMs;
+      else if (mode === "bronstein") next[player] = Math.min(turnStartRef.current, next[player]! + incrementMs);
+      return next;
+    });
+    setMoves(prev => { const next: [number, number] = [...prev]; next[player] = next[player]! + 1; return next; });
+    const other: Player = player === 0 ? 1 : 0;
+    delayLeftRef.current = incrementMs;
+    turnStartRef.current = times[other]!;
+    setActivePlayer(other);
+  };
+
+  const handlePause = () => {
+    if (state === "running") { stopInterval(); setState("paused"); }
+    else if (state === "paused") setState("running");
+  };
+
+  const handleReset = () => {
+    stopInterval();
+    setTimes([initialMs, initialMs]);
+    setActivePlayer(null);
+    setState("idle");
+    setMoves([0, 0]);
+  };
+
+  const isLow = (ms: number) => ms < 30000 && ms > 0;
+  const winner = state === "ended" ? (times[0]! <= 0 ? 1 : 0) : null;
+  const colorOf = (p: Player) => whitePlayer === p ? "○" : "●";
+
+  const PlayerRow = ({ player }: { player: Player }) => {
+    const isActive = activePlayer === player && state === "running";
+    const isWinner = state === "ended" && winner === player;
+    return (
+      <button
+        onPointerDown={(e) => { if (e.button !== 0) return; e.preventDefault(); handleTap(player); }}
+        className="w-full flex items-center justify-between px-4 py-3 transition-all duration-150"
+        style={{
+          touchAction: "none",
+          background: isWinner ? "var(--color-accent)" : isActive ? "var(--color-active)" : "var(--color-panel)",
+          color: isWinner ? "#fff" : "var(--color-ink)",
+          boxShadow: isActive
+            ? "inset 0 0 0 2px var(--color-accent)"
+            : "none",
+        }}
+      >
+        <span className="text-xs font-medium truncate mr-3" style={{ opacity: isActive ? 1 : 0.5, color: isActive ? "var(--color-accent)" : "inherit" }}>
+          {colorOf(player)} {flag} {moves[player]} mv
+          {isWinner && " — WIN"}
+        </span>
+        <span
+          className="font-bold tabular-nums shrink-0"
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: "clamp(1.25rem, 3vw, 2rem)",
+            color: isLow(times[player]!) && isActive ? "#ef4444" : "inherit",
+          }}
+        >
+          {isActive ? formatTimeDetail(times[player]!) : formatTime(times[player]!)}
+        </span>
+      </button>
+    );
+  };
+
+  return (
+    <div
+      className="flex flex-col overflow-hidden relative"
+      style={{ borderRadius: "var(--radius-card)", border: "1.5px solid var(--color-line)" }}
+    >
+      <div className="flex items-center justify-between px-3 py-2" style={{ background: "var(--color-paper)" }}>
+        <span className="text-xs font-bold" style={{ color: "var(--color-muted)" }}>
+          Board {boardNum}
+        </span>
+        <div className="flex items-center gap-2">
+          {state !== "idle" && state !== "ended" && (
+            <button
+              onClick={handlePause}
+              className="w-7 h-7 flex items-center justify-center rounded-full text-xs"
+              style={{
+                background: state === "paused" ? "var(--color-accent)" : "var(--color-panel)",
+                color: state === "paused" ? "#fff" : "var(--color-muted)",
+              }}
+            >
+              {state === "paused" ? "▶" : "⏸"}
+            </button>
+          )}
+          <button
+            onClick={handleReset}
+            className="w-7 h-7 flex items-center justify-center rounded-full text-xs"
+            style={{ background: "var(--color-panel)", color: "var(--color-muted)" }}
+          >
+            ↺
+          </button>
+        </div>
+      </div>
+      <PlayerRow player={1} />
+      <div style={{ height: 1, background: "var(--color-line)" }} />
+      <PlayerRow player={0} />
+      {state === "idle" && (
+        <div
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          style={{ borderRadius: "var(--radius-card)" }}
+        >
+          <span className="text-xs font-semibold px-3 py-1 rounded-lg text-white" style={{ background: "rgba(0,0,0,0.5)" }}>
+            Tap to start
+          </span>
         </div>
       )}
     </div>
