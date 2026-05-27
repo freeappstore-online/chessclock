@@ -57,13 +57,24 @@ function formatTimeDetail(ms: number): string {
 
 export function App() {
   const [screen, setScreen] = useState<"setup" | "clock">("setup");
-  const [timeControl, setTimeControl] = useState<TimeControl>(TIME_CONTROLS[5]!);
+  const [timeControl, setTimeControl] = useState<TimeControl>(() => {
+    try {
+      const saved = localStorage.getItem("chessclock-tc");
+      if (saved) return TIME_CONTROLS.find(t => t.label === saved) ?? TIME_CONTROLS[5]!;
+    } catch {}
+    return TIME_CONTROLS[5]!;
+  });
+
+  const selectTimeControl = (tc: TimeControl) => {
+    setTimeControl(tc);
+    try { localStorage.setItem("chessclock-tc", tc.label); } catch {}
+  };
 
   if (screen === "setup") {
     return (
       <Setup
         selected={timeControl}
-        onSelect={setTimeControl}
+        onSelect={selectTimeControl}
         onStart={() => setScreen("clock")}
       />
     );
@@ -197,6 +208,20 @@ function Clock({
     return () => window.removeEventListener("deviceorientation", handler);
   }, []);
 
+  useEffect(() => {
+    if (state !== "running" && state !== "paused") return;
+    let lock: WakeLockSentinel | null = null;
+    let released = false;
+    navigator.wakeLock?.request("screen").then(l => {
+      if (released) l.release();
+      else lock = l;
+    }).catch(() => {});
+    return () => {
+      released = true;
+      lock?.release();
+    };
+  }, [state]);
+
   const toggleLayout = useCallback(async () => {
     const DOE = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
     if (typeof DOE.requestPermission === "function") {
@@ -204,6 +229,29 @@ function Clock({
     }
     manualLayoutRef.current = true;
     setLayout((prev) => (prev === "portrait" ? "landscape" : "portrait"));
+  }, []);
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const playClick = useCallback(() => {
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+      const ctx = audioCtxRef.current;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(1200, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.03);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.06);
+    } catch {}
+  }, []);
+
+  const vibrate = useCallback(() => {
+    try { navigator.vibrate?.(10); } catch {}
   }, []);
 
   const stopInterval = useCallback(() => {
@@ -245,6 +293,8 @@ function Clock({
     if (state === "ended") return;
 
     if (state === "idle") {
+      playClick();
+      vibrate();
       setActivePlayer(0);
       setState("running");
       return;
@@ -254,6 +304,8 @@ function Clock({
     if (activePlayer !== player) return;
 
     stopInterval();
+    playClick();
+    vibrate();
 
     setTimes((prev) => {
       const next: [number, number] = [...prev];
@@ -287,6 +339,36 @@ function Clock({
     setState("idle");
     setMoves([0, 0]);
   };
+
+  const tapRef = useRef(handleTap);
+  tapRef.current = handleTap;
+  const pauseRef = useRef(handlePause);
+  pauseRef.current = handlePause;
+  const gameStateRef = useRef(state);
+  gameStateRef.current = state;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      switch (e.code) {
+        case "ArrowLeft":
+        case "KeyQ":
+          tapRef.current(1);
+          break;
+        case "ArrowRight":
+        case "KeyP":
+          tapRef.current(0);
+          break;
+        case "Space":
+          e.preventDefault();
+          if (gameStateRef.current === "idle") tapRef.current(0);
+          else if (gameStateRef.current !== "ended") pauseRef.current();
+          break;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const isLow = (ms: number) => ms < 30000 && ms > 0;
   const winner = state === "ended" ? (times[0]! <= 0 ? 1 : 0) : null;
