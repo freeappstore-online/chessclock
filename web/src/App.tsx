@@ -26,6 +26,7 @@ const TIME_CONTROLS: TimeControl[] = [
 
 type Player = 0 | 1;
 type GameState = "idle" | "running" | "paused" | "ended";
+type TimerMode = "fischer" | "bronstein" | "delay";
 
 function formatTime(ms: number): string {
   if (ms <= 0) return "0:00";
@@ -65,9 +66,42 @@ export function App() {
     return TIME_CONTROLS[5]!;
   });
 
+  const [names, setNames] = useState<[string, string]>(() => {
+    try {
+      const saved = localStorage.getItem("chessclock-names");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length === 2) return parsed as [string, string];
+      }
+    } catch {}
+    return ["", ""];
+  });
+
   const selectTimeControl = (tc: TimeControl) => {
     setTimeControl(tc);
     try { localStorage.setItem("chessclock-tc", tc.label); } catch {}
+  };
+
+  const updateName = (player: 0 | 1, name: string) => {
+    setNames(prev => {
+      const next: [string, string] = [...prev];
+      next[player] = name;
+      try { localStorage.setItem("chessclock-names", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const [mode, setMode] = useState<TimerMode>(() => {
+    try {
+      const saved = localStorage.getItem("chessclock-mode");
+      if (saved === "bronstein" || saved === "delay") return saved;
+    } catch {}
+    return "fischer";
+  });
+
+  const selectMode = (m: TimerMode) => {
+    setMode(m);
+    try { localStorage.setItem("chessclock-mode", m); } catch {}
   };
 
   if (screen === "setup") {
@@ -75,6 +109,10 @@ export function App() {
       <Setup
         selected={timeControl}
         onSelect={selectTimeControl}
+        names={names}
+        onNameChange={updateName}
+        mode={mode}
+        onModeChange={selectMode}
         onStart={() => setScreen("clock")}
       />
     );
@@ -83,6 +121,8 @@ export function App() {
   return (
     <Clock
       timeControl={timeControl}
+      names={names}
+      mode={mode}
       onBack={() => setScreen("setup")}
     />
   );
@@ -93,10 +133,18 @@ export function App() {
 function Setup({
   selected,
   onSelect,
+  names,
+  onNameChange,
+  mode,
+  onModeChange,
   onStart,
 }: {
   selected: TimeControl;
   onSelect: (tc: TimeControl) => void;
+  names: [string, string];
+  onNameChange: (player: 0 | 1, name: string) => void;
+  mode: TimerMode;
+  onModeChange: (mode: TimerMode) => void;
   onStart: () => void;
 }) {
   const tags = [...new Set(TIME_CONTROLS.map((tc) => tc.tag))];
@@ -144,6 +192,84 @@ function Setup({
           ))}
         </div>
 
+        {selected.increment > 0 && (
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--color-muted)" }}>
+              Timer mode
+            </p>
+            <div className="flex gap-2">
+              {([["fischer", "Increment"], ["bronstein", "Bronstein"], ["delay", "Delay"]] as const).map(([m, label]) => (
+                <button
+                  key={m}
+                  onClick={() => onModeChange(m)}
+                  className="px-3 py-2 text-xs font-semibold transition-all duration-100"
+                  style={{
+                    borderRadius: "var(--radius-btn)",
+                    background: mode === m ? "var(--color-accent)" : "var(--color-panel)",
+                    color: mode === m ? "#fff" : "var(--color-ink)",
+                    border: `1.5px solid ${mode === m ? "var(--color-accent)" : "var(--color-line)"}`,
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs mt-1.5" style={{ color: "var(--color-muted)" }}>
+              {mode === "fischer" ? `+${selected.increment}s added after each move` : mode === "bronstein" ? `${selected.increment}s delay; time never increases` : `Clock frozen for ${selected.increment}s each turn`}
+            </p>
+          </div>
+        )}
+
+        <div className="flex gap-3 mb-8 items-end">
+          <div className="flex-1">
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: "var(--color-muted)" }}>
+              White
+            </label>
+            <input
+              type="text"
+              value={names[0]}
+              onChange={(e) => onNameChange(0, e.target.value)}
+              placeholder="Player 1"
+              maxLength={20}
+              autoComplete="off"
+              autoCapitalize="words"
+              className="w-full px-3 py-2 text-sm font-medium outline-none"
+              style={{
+                background: "var(--color-panel)",
+                color: "var(--color-ink)",
+                border: "1.5px solid var(--color-line)",
+                borderRadius: "var(--radius-btn)",
+                WebkitUserSelect: "text",
+                userSelect: "text" as const,
+              }}
+            />
+          </div>
+          <span className="pb-2.5 text-sm font-medium" style={{ color: "var(--color-muted)" }}>vs</span>
+          <div className="flex-1">
+            <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: "var(--color-muted)" }}>
+              Black
+            </label>
+            <input
+              type="text"
+              value={names[1]}
+              onChange={(e) => onNameChange(1, e.target.value)}
+              placeholder="Player 2"
+              maxLength={20}
+              autoComplete="off"
+              autoCapitalize="words"
+              className="w-full px-3 py-2 text-sm font-medium outline-none"
+              style={{
+                background: "var(--color-panel)",
+                color: "var(--color-ink)",
+                border: "1.5px solid var(--color-line)",
+                borderRadius: "var(--radius-btn)",
+                WebkitUserSelect: "text",
+                userSelect: "text" as const,
+              }}
+            />
+          </div>
+        </div>
+
         <button
           onClick={onStart}
           className="w-full py-4 text-lg font-bold text-white transition-all duration-100 active:scale-[0.98]"
@@ -173,11 +299,21 @@ function Setup({
 
 // ── Clock Screen ──
 
+function countryFlag(code: string): string {
+  return [...code.toUpperCase()].map(c =>
+    String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)
+  ).join("");
+}
+
 function Clock({
   timeControl,
+  names,
+  mode,
   onBack,
 }: {
   timeControl: TimeControl;
+  names: [string, string];
+  mode: TimerMode;
   onBack: () => void;
 }) {
   const initialMs = timeControl.minutes * 60 * 1000;
@@ -194,8 +330,18 @@ function Clock({
   });
   const soundRef = useRef(soundEnabled);
   soundRef.current = soundEnabled;
+  const [flag, setFlag] = useState("");
+  const delayLeftRef = useRef(0);
+  const turnStartRef = useRef(0);
   const intervalRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
+
+  useEffect(() => {
+    fetch("/cdn-cgi/trace").then(r => r.text()).then(text => {
+      const match = text.match(/loc=([A-Z]{2})/);
+      if (match?.[1]) setFlag(countryFlag(match[1]));
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handler = (e: DeviceOrientationEvent) => {
@@ -302,24 +448,38 @@ function Clock({
     const delta = now - lastTickRef.current;
     lastTickRef.current = now;
 
+    if (mode === "delay" && delayLeftRef.current > 0) {
+      delayLeftRef.current -= delta;
+      if (delayLeftRef.current > 0) {
+        intervalRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      const excess = -delayLeftRef.current;
+      delayLeftRef.current = 0;
+      let ended = false;
+      setTimes((prev) => {
+        const next: [number, number] = [...prev];
+        if (activePlayer !== null) {
+          next[activePlayer] = Math.max(0, next[activePlayer]! - excess);
+          if (next[activePlayer]! <= 0) { ended = true; setState("ended"); }
+        }
+        return next;
+      });
+      if (!ended) intervalRef.current = requestAnimationFrame(tick);
+      return;
+    }
+
     let ended = false;
     setTimes((prev) => {
       const next: [number, number] = [...prev];
       if (activePlayer !== null) {
         next[activePlayer] = Math.max(0, next[activePlayer]! - delta);
-        if (next[activePlayer]! <= 0) {
-          ended = true;
-          setState("ended");
-          return next;
-        }
+        if (next[activePlayer]! <= 0) { ended = true; setState("ended"); }
       }
       return next;
     });
-
-    if (!ended) {
-      intervalRef.current = requestAnimationFrame(tick);
-    }
-  }, [activePlayer]);
+    if (!ended) intervalRef.current = requestAnimationFrame(tick);
+  }, [activePlayer, mode]);
 
   useEffect(() => {
     if (state === "running" && activePlayer !== null) {
@@ -335,6 +495,8 @@ function Clock({
     if (state === "idle") {
       playClick();
       vibrate();
+      delayLeftRef.current = incrementMs;
+      turnStartRef.current = initialMs;
       setActivePlayer(0);
       setState("running");
       return;
@@ -349,7 +511,11 @@ function Clock({
 
     setTimes((prev) => {
       const next: [number, number] = [...prev];
-      next[player] = next[player]! + incrementMs;
+      if (mode === "fischer") {
+        next[player] = next[player]! + incrementMs;
+      } else if (mode === "bronstein") {
+        next[player] = Math.min(turnStartRef.current, next[player]! + incrementMs);
+      }
       return next;
     });
 
@@ -360,6 +526,8 @@ function Clock({
     });
 
     const other: Player = player === 0 ? 1 : 0;
+    delayLeftRef.current = incrementMs;
+    turnStartRef.current = times[other]!;
     setActivePlayer(other);
   };
 
@@ -469,8 +637,8 @@ function Clock({
             ? formatTimeDetail(times[1]!)
             : formatTime(times[1]!)}
         </span>
-        <span className="text-sm font-medium mt-1" style={{ opacity: 0.5 }}>
-          {moves[1]} move{moves[1] !== 1 ? "s" : ""}
+        <span className="text-sm font-medium mt-1" style={{ opacity: 0.6 }}>
+          {flag && <>{flag} </>}{names[1] && <>{names[1]} &middot; </>}{moves[1]} move{moves[1] !== 1 ? "s" : ""}
         </span>
         {state === "ended" && winner === 1 && (
           <span className="absolute top-4 left-4 text-sm font-bold">WIN</span>
@@ -602,8 +770,8 @@ function Clock({
             ? formatTimeDetail(times[0]!)
             : formatTime(times[0]!)}
         </span>
-        <span className="text-sm font-medium mt-1" style={{ opacity: 0.5 }}>
-          {moves[0]} move{moves[0] !== 1 ? "s" : ""}
+        <span className="text-sm font-medium mt-1" style={{ opacity: 0.6 }}>
+          {flag && <>{flag} </>}{names[0] && <>{names[0]} &middot; </>}{moves[0]} move{moves[0] !== 1 ? "s" : ""}
         </span>
       </button>
 
