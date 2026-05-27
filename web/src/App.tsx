@@ -217,13 +217,21 @@ function Clock({
     if (state !== "running" && state !== "paused") return;
     let lock: WakeLockSentinel | null = null;
     let released = false;
-    navigator.wakeLock?.request("screen").then(l => {
-      if (released) l.release();
-      else lock = l;
-    }).catch(() => {});
+    const acquire = () => {
+      navigator.wakeLock?.request("screen").then(l => {
+        if (released) l.release();
+        else lock = l;
+      }).catch(() => {});
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !released) acquire();
+    };
+    acquire();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       released = true;
       lock?.release();
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [state]);
 
@@ -243,6 +251,7 @@ function Clock({
     try {
       if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
       const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -265,6 +274,7 @@ function Clock({
     try {
       if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
       const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume();
       [800, 600, 400].forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -292,11 +302,13 @@ function Clock({
     const delta = now - lastTickRef.current;
     lastTickRef.current = now;
 
+    let ended = false;
     setTimes((prev) => {
       const next: [number, number] = [...prev];
       if (activePlayer !== null) {
         next[activePlayer] = Math.max(0, next[activePlayer]! - delta);
         if (next[activePlayer]! <= 0) {
+          ended = true;
           setState("ended");
           return next;
         }
@@ -304,7 +316,9 @@ function Clock({
       return next;
     });
 
-    intervalRef.current = requestAnimationFrame(tick);
+    if (!ended) {
+      intervalRef.current = requestAnimationFrame(tick);
+    }
   }, [activePlayer]);
 
   useEffect(() => {
@@ -426,15 +440,15 @@ function Clock({
   };
 
   const timerFontSize = isLandscape
-    ? "clamp(2.5rem, 10vh, 5rem)"
+    ? "clamp(2.5rem, 15vh, 5rem)"
     : "clamp(3rem, 12vw, 6rem)";
 
   return (
-    <div className={`h-full flex ${isLandscape ? "flex-row" : "flex-col"}`}>
+    <div className={`h-full flex relative ${isLandscape ? "flex-row" : "flex-col"}`}>
       {/* Player 2 */}
       <button
-        onPointerDown={(e) => { e.preventDefault(); handleTap(1); }}
-        className="flex-1 flex flex-col items-center justify-center transition-colors duration-200 relative"
+        onPointerDown={(e) => { if (e.button !== 0) return; e.preventDefault(); handleTap(1); }}
+        className="flex-1 flex flex-col items-center justify-center transition-all duration-200 relative"
         style={{
           touchAction: "none",
           transform: "rotate(180deg)",
@@ -551,8 +565,8 @@ function Clock({
           ) : (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M11 5L6 9H2v6h4l5 4V5z" />
-              <line x1="23" y1="9" x2="17" y2="15" />
-              <line x1="17" y1="9" x2="23" y2="15" />
+              <line x1="21" y1="9" x2="15" y2="15" />
+              <line x1="15" y1="9" x2="21" y2="15" />
             </svg>
           )}
         </button>
@@ -564,8 +578,8 @@ function Clock({
 
       {/* Player 1 */}
       <button
-        onPointerDown={(e) => { e.preventDefault(); handleTap(0); }}
-        className="flex-1 flex flex-col items-center justify-center transition-colors duration-200 relative"
+        onPointerDown={(e) => { if (e.button !== 0) return; e.preventDefault(); handleTap(0); }}
+        className="flex-1 flex flex-col items-center justify-center transition-all duration-200 relative"
         style={{
           touchAction: "none",
           background: playerBg(0),
@@ -600,7 +614,7 @@ function Clock({
           style={{ background: "rgba(0,0,0,0.15)" }}
         >
           <p className="text-lg font-semibold text-white px-6 py-3 rounded-xl" style={{ background: "rgba(0,0,0,0.6)" }}>
-            Tap either side to start
+            Tap to start
           </p>
         </div>
       )}
