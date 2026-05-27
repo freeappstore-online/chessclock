@@ -104,6 +104,19 @@ export function App() {
     try { localStorage.setItem("chessclock-mode", m); } catch {}
   };
 
+  const [whitePlayer, setWhitePlayer] = useState<Player>(() => {
+    try { if (localStorage.getItem("chessclock-white") === "1") return 1; } catch {}
+    return 0;
+  });
+
+  const swapColors = () => {
+    setWhitePlayer(prev => {
+      const next: Player = prev === 0 ? 1 : 0;
+      try { localStorage.setItem("chessclock-white", String(next)); } catch {}
+      return next;
+    });
+  };
+
   if (screen === "setup") {
     return (
       <Setup
@@ -113,6 +126,8 @@ export function App() {
         onNameChange={updateName}
         mode={mode}
         onModeChange={selectMode}
+        whitePlayer={whitePlayer}
+        onSwapColors={swapColors}
         onStart={() => setScreen("clock")}
       />
     );
@@ -123,6 +138,7 @@ export function App() {
       timeControl={timeControl}
       names={names}
       mode={mode}
+      whitePlayer={whitePlayer}
       onBack={() => setScreen("setup")}
     />
   );
@@ -137,6 +153,8 @@ function Setup({
   onNameChange,
   mode,
   onModeChange,
+  whitePlayer,
+  onSwapColors,
   onStart,
 }: {
   selected: TimeControl;
@@ -145,6 +163,8 @@ function Setup({
   onNameChange: (player: 0 | 1, name: string) => void;
   mode: TimerMode;
   onModeChange: (mode: TimerMode) => void;
+  whitePlayer: Player;
+  onSwapColors: () => void;
   onStart: () => void;
 }) {
   const tags = [...new Set(TIME_CONTROLS.map((tc) => tc.tag))];
@@ -223,7 +243,7 @@ function Setup({
         <div className="flex gap-3 mb-8 items-end">
           <div className="flex-1">
             <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: "var(--color-muted)" }}>
-              White
+              {whitePlayer === 0 ? "○ White" : "● Black"} <span className="normal-case tracking-normal font-normal">(bottom)</span>
             </label>
             <input
               type="text"
@@ -244,10 +264,17 @@ function Setup({
               }}
             />
           </div>
-          <span className="pb-2.5 text-sm font-medium" style={{ color: "var(--color-muted)" }}>vs</span>
+          <button
+            onClick={onSwapColors}
+            className="pb-2 px-2 py-1 text-sm font-semibold transition-all duration-100 active:scale-95"
+            style={{ color: "var(--color-accent)" }}
+            title="Swap colors"
+          >
+            ⇅
+          </button>
           <div className="flex-1">
             <label className="text-xs font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: "var(--color-muted)" }}>
-              Black
+              {whitePlayer === 1 ? "○ White" : "● Black"} <span className="normal-case tracking-normal font-normal">(top)</span>
             </label>
             <input
               type="text"
@@ -309,11 +336,13 @@ function Clock({
   timeControl,
   names,
   mode,
+  whitePlayer,
   onBack,
 }: {
   timeControl: TimeControl;
   names: [string, string];
   mode: TimerMode;
+  whitePlayer: Player;
   onBack: () => void;
 }) {
   const initialMs = timeControl.minutes * 60 * 1000;
@@ -497,7 +526,7 @@ function Clock({
       vibrate();
       delayLeftRef.current = incrementMs;
       turnStartRef.current = initialMs;
-      setActivePlayer(0);
+      setActivePlayer(whitePlayer);
       setState("running");
       return;
     }
@@ -603,9 +632,11 @@ function Clock({
   const activeShadow = (player: Player) => {
     if (activePlayer !== player || state === "ended") return "none";
     return isLandscape
-      ? "inset 4px 0 0 0 var(--color-accent)"
-      : "inset 0 4px 0 0 var(--color-accent)";
+      ? "inset 6px 0 0 0 var(--color-accent), inset 24px 0 40px -16px var(--color-accent)"
+      : "inset 0 6px 0 0 var(--color-accent), inset 0 24px 40px -16px var(--color-accent)";
   };
+
+  const colorOf = (player: Player) => whitePlayer === player ? "○" : "●";
 
   const timerFontSize = isLandscape
     ? "clamp(2.5rem, 15vh, 5rem)"
@@ -637,8 +668,14 @@ function Clock({
             ? formatTimeDetail(times[1]!)
             : formatTime(times[1]!)}
         </span>
-        <span className="text-sm font-medium mt-1" style={{ opacity: 0.6 }}>
-          {flag && <>{flag} </>}{names[1] && <>{names[1]} &middot; </>}{moves[1]} move{moves[1] !== 1 ? "s" : ""}
+        <span
+          className="text-sm font-medium mt-1 transition-colors duration-200"
+          style={{
+            opacity: activePlayer === 1 && state === "running" ? 1 : 0.6,
+            color: activePlayer === 1 && state === "running" ? "var(--color-accent)" : "inherit",
+          }}
+        >
+          {colorOf(1)} {flag && <>{flag} </>}{names[1] && <>{names[1]} &middot; </>}{moves[1]} move{moves[1] !== 1 ? "s" : ""}
         </span>
         {state === "ended" && winner === 1 && (
           <span className="absolute top-4 left-4 text-sm font-bold">WIN</span>
@@ -770,8 +807,14 @@ function Clock({
             ? formatTimeDetail(times[0]!)
             : formatTime(times[0]!)}
         </span>
-        <span className="text-sm font-medium mt-1" style={{ opacity: 0.6 }}>
-          {flag && <>{flag} </>}{names[0] && <>{names[0]} &middot; </>}{moves[0]} move{moves[0] !== 1 ? "s" : ""}
+        <span
+          className="text-sm font-medium mt-1 transition-colors duration-200"
+          style={{
+            opacity: activePlayer === 0 && state === "running" ? 1 : 0.6,
+            color: activePlayer === 0 && state === "running" ? "var(--color-accent)" : "inherit",
+          }}
+        >
+          {colorOf(0)} {flag && <>{flag} </>}{names[0] && <>{names[0]} &middot; </>}{moves[0]} move{moves[0] !== 1 ? "s" : ""}
         </span>
       </button>
 
