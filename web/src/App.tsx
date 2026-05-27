@@ -189,6 +189,11 @@ function Clock({
   const [moves, setMoves] = useState<[number, number]>([0, 0]);
   const [layout, setLayout] = useState<"portrait" | "landscape">("portrait");
   const manualLayoutRef = useRef(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try { return localStorage.getItem("chessclock-sound") !== "off"; } catch { return true; }
+  });
+  const soundRef = useRef(soundEnabled);
+  soundRef.current = soundEnabled;
   const intervalRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
 
@@ -234,6 +239,7 @@ function Clock({
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   const playClick = useCallback(() => {
+    if (!soundRef.current) return;
     try {
       if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
       const ctx = audioCtxRef.current;
@@ -252,6 +258,26 @@ function Clock({
 
   const vibrate = useCallback(() => {
     try { navigator.vibrate?.(10); } catch {}
+  }, []);
+
+  const playFlagFall = useCallback(() => {
+    if (!soundRef.current) return;
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+      const ctx = audioCtxRef.current;
+      [800, 600, 400].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        const start = ctx.currentTime + i * 0.15;
+        gain.gain.setValueAtTime(0.2, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.12);
+        osc.start(start);
+        osc.stop(start + 0.12);
+      });
+    } catch {}
   }, []);
 
   const stopInterval = useCallback(() => {
@@ -370,6 +396,13 @@ function Clock({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  useEffect(() => {
+    if (state === "ended") {
+      playFlagFall();
+      try { navigator.vibrate?.([100, 50, 100]); } catch {}
+    }
+  }, [state, playFlagFall]);
+
   const isLow = (ms: number) => ms < 30000 && ms > 0;
   const winner = state === "ended" ? (times[0]! <= 0 ? 1 : 0) : null;
   const isLandscape = layout === "landscape";
@@ -400,9 +433,10 @@ function Clock({
     <div className={`h-full flex ${isLandscape ? "flex-row" : "flex-col"}`}>
       {/* Player 2 */}
       <button
-        onClick={() => handleTap(1)}
+        onPointerDown={(e) => { e.preventDefault(); handleTap(1); }}
         className="flex-1 flex flex-col items-center justify-center transition-colors duration-200 relative"
         style={{
+          touchAction: "none",
           transform: "rotate(180deg)",
           background: playerBg(1),
           color: playerColor(1),
@@ -410,7 +444,7 @@ function Clock({
         }}
       >
         <span
-          className="font-bold tracking-tight"
+          className={`font-bold tracking-tight ${isLow(times[1]!) && activePlayer === 1 && state === "running" ? "animate-pulse" : ""}`}
           style={{
             fontFamily: "var(--font-display)",
             fontSize: timerFontSize,
@@ -497,6 +531,32 @@ function Clock({
           )}
         </button>
 
+        <button
+          onClick={() => {
+            setSoundEnabled(prev => {
+              const next = !prev;
+              try { localStorage.setItem("chessclock-sound", next ? "on" : "off"); } catch {}
+              return next;
+            });
+          }}
+          className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+          style={{ background: "var(--color-panel)", color: "var(--color-muted)" }}
+          title={soundEnabled ? "Mute" : "Unmute"}
+        >
+          {soundEnabled ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M11 5L6 9H2v6h4l5 4V5z" />
+              <path d="M15.54 8.46a5 5 0 010 7.07" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M11 5L6 9H2v6h4l5 4V5z" />
+              <line x1="23" y1="9" x2="17" y2="15" />
+              <line x1="17" y1="9" x2="23" y2="15" />
+            </svg>
+          )}
+        </button>
+
         <div className="text-xs font-medium" style={{ color: "var(--color-muted)" }}>
           {timeControl.label}
         </div>
@@ -504,9 +564,10 @@ function Clock({
 
       {/* Player 1 */}
       <button
-        onClick={() => handleTap(0)}
+        onPointerDown={(e) => { e.preventDefault(); handleTap(0); }}
         className="flex-1 flex flex-col items-center justify-center transition-colors duration-200 relative"
         style={{
+          touchAction: "none",
           background: playerBg(0),
           color: playerColor(0),
           boxShadow: activeShadow(0),
@@ -516,7 +577,7 @@ function Clock({
           <span className="absolute top-4 right-4 text-sm font-bold">WIN</span>
         )}
         <span
-          className="font-bold tracking-tight"
+          className={`font-bold tracking-tight ${isLow(times[0]!) && activePlayer === 0 && state === "running" ? "animate-pulse" : ""}`}
           style={{
             fontFamily: "var(--font-display)",
             fontSize: timerFontSize,
