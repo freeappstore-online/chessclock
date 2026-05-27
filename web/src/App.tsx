@@ -60,6 +60,15 @@ function formatTimeDetail(ms: number): string {
   return formatTime(ms);
 }
 
+function formatMoveTime(ms: number): string {
+  const s = ms / 1000;
+  if (s < 10) return `${s.toFixed(1)}s`;
+  if (s < 60) return `${Math.round(s)}s`;
+  const m = Math.floor(s / 60);
+  const sec = Math.round(s % 60);
+  return `${m}m${sec > 0 ? `${sec}s` : ""}`;
+}
+
 // ── App ──
 
 export function App() {
@@ -67,7 +76,18 @@ export function App() {
   const [timeControl, setTimeControl] = useState<TimeControl>(() => {
     try {
       const saved = localStorage.getItem("chessclock-tc");
-      if (saved) return TIME_CONTROLS.find(t => t.label === saved) ?? TIME_CONTROLS[5]!;
+      if (saved) {
+        try {
+          const obj = JSON.parse(saved);
+          if (typeof obj.m === "number" && typeof obj.i === "number") {
+            const preset = TIME_CONTROLS.find(t => t.minutes === obj.m && t.increment === obj.i);
+            if (preset) return preset;
+            return { label: obj.i > 0 ? `${obj.m}|${obj.i}` : `${obj.m} min`, minutes: obj.m, increment: obj.i, tag: "Custom" };
+          }
+        } catch {}
+        const preset = TIME_CONTROLS.find(t => t.label === saved);
+        if (preset) return preset;
+      }
     } catch {}
     return TIME_CONTROLS[5]!;
   });
@@ -85,7 +105,7 @@ export function App() {
 
   const selectTimeControl = (tc: TimeControl) => {
     setTimeControl(tc);
-    try { localStorage.setItem("chessclock-tc", tc.label); } catch {}
+    try { localStorage.setItem("chessclock-tc", JSON.stringify({ m: tc.minutes, i: tc.increment })); } catch {}
   };
 
   const updateName = (player: 0 | 1, name: string) => {
@@ -212,6 +232,17 @@ function Setup({
   onStart: () => void;
 }) {
   const tags = [...new Set(TIME_CONTROLS.map((tc) => tc.tag))];
+  const isCustom = selected.tag === "Custom";
+  const [customMin, setCustomMin] = useState(isCustom ? selected.minutes : 5);
+  const [customInc, setCustomInc] = useState(isCustom ? selected.increment : 0);
+
+  const handleCustom = (min: number, inc: number) => {
+    const m = Math.max(1, Math.min(180, min || 1));
+    const i = Math.max(0, Math.min(60, inc || 0));
+    setCustomMin(m);
+    setCustomInc(i);
+    onSelect({ label: i > 0 ? `${m}|${i}` : `${m} min`, minutes: m, increment: i, tag: "Custom" });
+  };
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: "var(--color-paper)" }}>
@@ -254,6 +285,48 @@ function Setup({
               </div>
             </div>
           ))}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--color-muted)" }}>
+              Custom
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={180}
+                value={customMin}
+                onChange={(e) => handleCustom(Number(e.target.value), customInc)}
+                className="w-16 px-2 py-2 text-sm font-semibold text-center outline-none"
+                style={{
+                  background: "var(--color-panel)",
+                  color: "var(--color-ink)",
+                  border: `1.5px solid ${isCustom ? "var(--color-accent)" : "var(--color-line)"}`,
+                  borderRadius: "var(--radius-btn)",
+                  WebkitUserSelect: "text",
+                  userSelect: "text" as const,
+                }}
+              />
+              <span className="text-sm" style={{ color: "var(--color-muted)" }}>min</span>
+              <span className="text-sm font-bold" style={{ color: "var(--color-muted)" }}>+</span>
+              <input
+                type="number"
+                min={0}
+                max={60}
+                value={customInc}
+                onChange={(e) => handleCustom(customMin, Number(e.target.value))}
+                className="w-16 px-2 py-2 text-sm font-semibold text-center outline-none"
+                style={{
+                  background: "var(--color-panel)",
+                  color: "var(--color-ink)",
+                  border: `1.5px solid ${isCustom ? "var(--color-accent)" : "var(--color-line)"}`,
+                  borderRadius: "var(--radius-btn)",
+                  WebkitUserSelect: "text",
+                  userSelect: "text" as const,
+                }}
+              />
+              <span className="text-sm" style={{ color: "var(--color-muted)" }}>sec</span>
+            </div>
+          </div>
         </div>
 
         {selected.increment > 0 && (
@@ -424,6 +497,8 @@ function Clock({
   soundRef.current = soundEnabled;
   const delayLeftRef = useRef(0);
   const turnStartRef = useRef(0);
+  const moveTimesRef = useRef<[number[], number[]]>([[], []]);
+  const turnStartedAtRef = useRef(0);
   const intervalRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
 
@@ -581,6 +656,7 @@ function Clock({
       vibrate();
       delayLeftRef.current = incrementMs;
       turnStartRef.current = initialMs;
+      turnStartedAtRef.current = performance.now();
       setActivePlayer(whitePlayer);
       setState("running");
       return;
@@ -592,6 +668,7 @@ function Clock({
     stopInterval();
     playClick();
     vibrate();
+    moveTimesRef.current[player].push(performance.now() - turnStartedAtRef.current);
 
     setTimes((prev) => {
       const next: [number, number] = [...prev];
@@ -612,6 +689,7 @@ function Clock({
     const other: Player = player === 0 ? 1 : 0;
     delayLeftRef.current = incrementMs;
     turnStartRef.current = times[other]!;
+    turnStartedAtRef.current = performance.now();
     setActivePlayer(other);
   };
 
@@ -630,6 +708,7 @@ function Clock({
     setActivePlayer(null);
     setState("idle");
     setMoves([0, 0]);
+    moveTimesRef.current = [[], []];
   };
 
   const tapRef = useRef(handleTap);
@@ -730,7 +809,7 @@ function Clock({
             color: activePlayer === 1 && state === "running" ? "var(--color-accent)" : "inherit",
           }}
         >
-          {colorOf(1)} {flag && <>{flag} </>}{names[1] && <>{names[1]} &middot; </>}{moves[1]} move{moves[1] !== 1 ? "s" : ""}
+          {colorOf(1)} {flag && <>{flag} </>}{names[1] && <>{names[1]} &middot; </>}{moves[1]} mv{moveTimesRef.current[1].length > 0 && ` · ${formatMoveTime(moveTimesRef.current[1][moveTimesRef.current[1].length - 1]!)}`}
         </span>
         {state === "ended" && winner === 1 && (
           <span className="absolute top-4 left-4 text-sm font-bold">WIN</span>
@@ -869,7 +948,7 @@ function Clock({
             color: activePlayer === 0 && state === "running" ? "var(--color-accent)" : "inherit",
           }}
         >
-          {colorOf(0)} {flag && <>{flag} </>}{names[0] && <>{names[0]} &middot; </>}{moves[0]} move{moves[0] !== 1 ? "s" : ""}
+          {colorOf(0)} {flag && <>{flag} </>}{names[0] && <>{names[0]} &middot; </>}{moves[0]} mv{moveTimesRef.current[0].length > 0 && ` · ${formatMoveTime(moveTimesRef.current[0][moveTimesRef.current[0].length - 1]!)}`}
         </span>
       </button>
 
