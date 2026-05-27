@@ -42,7 +42,7 @@ function formatTime(ms: number): string {
 
 function formatTimeDetail(ms: number): string {
   if (ms <= 0) return "0:00.0";
-  if (ms < 20000) {
+  if (ms <= 20000) {
     const totalTenths = Math.ceil(ms / 100);
     const seconds = Math.floor(totalTenths / 10);
     const tenths = totalTenths % 10;
@@ -102,8 +102,8 @@ function Setup({
   const tags = [...new Set(TIME_CONTROLS.map((tc) => tc.tag))];
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--color-paper)" }}>
-      <div className="flex-1 flex flex-col justify-center px-6 py-8 max-w-md mx-auto w-full">
+    <div className="h-full overflow-y-auto" style={{ background: "var(--color-paper)" }}>
+      <div className="min-h-full flex flex-col justify-center px-6 py-8 max-w-md mx-auto w-full">
         <h1
           className="text-3xl font-bold text-center mb-1 tracking-tight"
           style={{ fontFamily: "var(--font-display)" }}
