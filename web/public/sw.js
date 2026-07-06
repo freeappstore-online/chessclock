@@ -1,4 +1,4 @@
-const CACHE = "cc-v1";
+const CACHE = "cc-v2";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
@@ -19,30 +19,18 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
 
-  if (e.request.mode === "navigate") {
-    e.respondWith(
-      fetch(e.request)
-        .then((res) => {
+  // Network-first for everything: always serve fresh content when online,
+  // fall back to cache only when offline. Vite-hashed assets get cached on
+  // first fetch; index.html is always re-fetched so deploys land immediately.
+  e.respondWith(
+    fetch(e.request)
+      .then((res) => {
+        if (res.ok) {
           const clone = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, clone));
-          return res;
-        })
-        .catch(() => caches.match("/index.html"))
-    );
-    return;
-  }
-
-  e.respondWith(
-    caches.match(e.request).then(
-      (cached) =>
-        cached ||
-        fetch(e.request).then((res) => {
-          if (res.ok) {
-            const clone = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, clone));
-          }
-          return res;
-        })
-    )
+        }
+        return res;
+      })
+      .catch(() => caches.match(e.request).then((r) => r || caches.match("/index.html")))
   );
 });
