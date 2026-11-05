@@ -14,8 +14,17 @@
   --radius-btn: 0.75rem;
 }
 
+/* Canonical platform tokens; the @theme colours above mirror them for Tailwind. */
+:root {
+  --paper: #fefdfb;
+  --ink: #1a1917;
+  --accent: #5b7db1;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
+    --paper: #0f0f0e;
+    --ink: #f2f0ed;
     --color-paper: #0f0f0e;
     --color-ink: #f2f0ed;
     --color-muted: #7a7770;
@@ -31,7 +40,7 @@ html, body, #root {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  font-family: var(--font-body);
+  font-family: "Manrope", system-ui, sans-serif;
   background: var(--color-paper);
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
@@ -41,4 +50,4 @@ html, body, #root {
   touch-action: manipulation;
 }
 
-h1, h2, h3 { font-family: var(--font-display); }
+h1, h2, h3 { font-family: "Fraunces", Georgia, serif; }

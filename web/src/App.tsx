@@ -249,7 +249,7 @@ function Setup({
       <div className="min-h-full flex flex-col justify-center px-6 py-8 max-w-md mx-auto w-full">
         <h1
           className="text-3xl font-bold text-center mb-1 tracking-tight"
-          style={{ fontFamily: "var(--font-display)" }}
+          style={{ fontFamily: "Fraunces, Georgia, serif" }}
         >
           Chess Clock
         </h1>
@@ -793,7 +793,7 @@ function Clock({
         <span
           className={`font-bold tracking-tight ${isLow(times[1]!) && activePlayer === 1 && state === "running" ? "animate-pulse" : ""}`}
           style={{
-            fontFamily: "var(--font-display)",
+            fontFamily: "Fraunces, Georgia, serif",
             fontSize: timerFontSize,
             color: isLow(times[1]!) && activePlayer === 1 ? "#ef4444" : "inherit",
           }}
@@ -932,7 +932,7 @@ function Clock({
         <span
           className={`font-bold tracking-tight ${isLow(times[0]!) && activePlayer === 0 && state === "running" ? "animate-pulse" : ""}`}
           style={{
-            fontFamily: "var(--font-display)",
+            fontFamily: "Fraunces, Georgia, serif",
             fontSize: timerFontSize,
             color: isLow(times[0]!) && activePlayer === 0 ? "#ef4444" : "inherit",
           }}
@@ -1159,7 +1159,7 @@ function BoardCard({
         <span
           className="font-bold tabular-nums shrink-0"
           style={{
-            fontFamily: "var(--font-display)",
+            fontFamily: "Fraunces, Georgia, serif",
             fontSize: "clamp(1.25rem, 3vw, 2rem)",
             color: isLow(times[player]!) && isActive ? "#ef4444" : "inherit",
           }}
