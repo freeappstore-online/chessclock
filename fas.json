@@ -1,0 +1,6 @@
+{
+  "appId": "chessclock",
+  "applicationRoot": "web",
+  "outputPath": "web/dist",
+  "buildCommand": "pnpm build"
+}
